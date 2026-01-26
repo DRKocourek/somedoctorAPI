@@ -1,18 +1,21 @@
 const express = require("express");
+const expressWs = require("express-ws");
 const fetch = require("node-fetch");
 const cors = require("cors");
 const WebSocket = require('ws');
+const http = require('http');
 const { URL } = require("url");
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database("/home/drkocourek/24api/stats/stats.sqlite");
 
 let acftCache;
+//keep track of connected users
+const clients = new Set();
 
 const app = express();
-
+expressWs(app);
 // Allow requests
 app.use(cors());
-
 //setup websocket
 const socket = new WebSocket('wss://24data.ptfs.app/wss');
 socket.addEventListener('open', event =>{
@@ -35,6 +38,12 @@ socket.addEventListener('message', raw => {
 
   if (msg.t != "ACFT_DATA") return;
   acftCache = msg;
+  //send out the new aircraft data when it arrives
+  for (const client of clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(acftCache));
+    }
+  }
 });
 // Check if websocket was closed
 socket.addEventListener('close', event => {
@@ -45,9 +54,22 @@ socket.addEventListener('error', error => {
   console.error('WebSocket error:', error);
 });
 
+
+
 //setup the output websocket
+app.ws('/api/acft-data', (ws, req) => {
+  clients.add(ws);
+  console.log('Client connected');
 
+  if (acftCache) {
+    ws.send(JSON.stringify(acftCache));
+  }
 
+  ws.on('close', () => {
+    clients.delete(ws);
+    console.log('Client disconnected');
+  });
+});
 
 let healthStatus;
 
@@ -147,4 +169,4 @@ app.get("/api/teapot", (req, res) => {
 });
 
 
-app.listen(3000, () => console.log("Server running on port 3000"));
+app.listen(8443, () => console.log("Server running on port 8443"));
