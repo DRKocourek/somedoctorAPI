@@ -1,43 +1,43 @@
-const express = require("express");
-const fetch = require('node-fetch');
-globalThis.fetch = fetch;
-const cors = require("cors");
-const ws = require('ws');
-const { createServer } = require('http')
-const { URL } = require("url");
+import express from 'express';
+import fetch from 'node-fetch';
+import cors from 'cors';
+import WebSocket, { WebSocketServer } from 'ws';
+import http from 'http';
+import url from 'url';
 
 let acftCache;
+let atisCache;
 //keep track of connected users
 const clients = new Set();
 
 const app = express();
 
-const server = createServer(app);
+const server = http.createServer(app);
 
-const wss = new ws.Server({
+const wss = new WebSocketServer({
   server,
   path: '/api/acft-data',
-})
+});
 
-//setup the output websocket 
-wss.on('connection', (ws) => { 
-  clients.add(ws); console.log('New client connected'); 
-  // Send the initial data to the client 
-  if(acftCache) { 
-    ws.send(JSON.stringify(acftCache)); 
-  } 
-  // Close event handler 
-  ws.on('close', () => { 
-    console.log('Client disconnected'); 
+//setup the output WebSocket
+wss.on('connection', (ws) => {
+  clients.add(ws); console.log('New client connected');
+  // Send the initial data to the client
+  if(acftCache) {
+    WebSocket.send(JSON.stringify(acftCache));
+  }
+  // Close event handler
+  WebSocket.on('close', () => {
+    console.log('Client disconnected');
     clients.delete(ws);
-  }); 
+  });
 });
 
 // Allow requests
 app.use(cors());
-//setup websocket
+//setup WebSocket
 function connectUpstream() {
-  const socket = new ws('wss://24data.ptfs.app/wss');
+  const socket = new WebSocket('wss://24data.ptfs.app/wss');
 
   socket.on('open', () => {
     console.log('Upstream WS connected');
@@ -72,7 +72,7 @@ let socket = connectUpstream();
     acftCache = msg;
 
     for (const client of clients) {
-      if (client.readyState === ws.OPEN) {
+      if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(acftCache));
       }
     }
@@ -89,7 +89,7 @@ async function handleFlightPlan(data){
   let index = flightplans.length;
   flightplans[index] = data;
   //console.log(flightplans[index].d.arriving);
-  
+
 }
 
 let controllersCache = null;
