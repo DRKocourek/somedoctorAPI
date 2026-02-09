@@ -1,5 +1,6 @@
 package-lock.json
 node_modules
+stats
+stats/stats.sqlite
 package.json
 .git
-backend/stats

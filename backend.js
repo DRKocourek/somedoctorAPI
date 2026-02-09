@@ -1,75 +1,84 @@
 const express = require("express");
-const expressWs = require("express-ws");
 const fetch = require("node-fetch");
 const cors = require("cors");
-const WebSocket = require('ws');
-const http = require('http');
+const ws = require('ws');
+const { createServer } = require('http')
 const { URL } = require("url");
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database("/home/drkocourek/24api/stats/stats.sqlite");
 
 let acftCache;
 //keep track of connected users
 const clients = new Set();
 
 const app = express();
-expressWs(app);
+
+const server = createServer(app);
+
+const wss = new ws.Server({
+  server,
+  path: '/api/acft-data',
+})
+
+//setup the output websocket 
+wss.on('connection', (ws) => { 
+  clients.add(ws); console.log('New client connected'); 
+  // Send the initial data to the client 
+  if(acftCache) { 
+    ws.send(JSON.stringify(acftCache)); 
+  } 
+  // Close event handler 
+  ws.on('close', () => { 
+    console.log('Client disconnected'); 
+    clients.delete(ws);
+  }); 
+});
+
 // Allow requests
 app.use(cors());
 //setup websocket
-const socket = new WebSocket('wss://24data.ptfs.app/wss');
-socket.addEventListener('open', event =>{
-  console.log("Websocket to 24data established successfully!");
-});
+function connectUpstream() {
+  const socket = new ws('wss://24data.ptfs.app/wss');
 
+  socket.on('open', () => {
+    console.log('Upstream WS connected');
+  });
 
+  socket.on('message', handleMessage);
 
-//listen and filter the needed data
-socket.addEventListener('message', raw => {
-    const text = raw.data;
+  socket.on('close', () => {
+    console.warn('Upstream WS closed, reconnecting in 5s');
+    setTimeout(connectUpstream, 5000);
+  });
+
+  socket.on('error', err => {
+    console.error('Upstream WS error', err);
+    socket.close();
+  });
+
+  return socket;
+}
+
+let socket = connectUpstream();
+//listen and filter just the needed data
+  function handleMessage(raw) {
     let msg;
-  try {
-    msg = JSON.parse(text);
-  } catch (err) {
-    console.error("Invalid JSON:", err);
-    return;
-  }
-  //console.log("Data type: ", msg.t);
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (msg.t !== 'ACFT_DATA') return;
 
-  if (msg.t != "ACFT_DATA") return;
-  acftCache = msg;
-  //send out the new aircraft data when it arrives
-  for (const client of clients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(acftCache));
+    acftCache = msg;
+
+    for (const client of clients) {
+      if (client.readyState === ws.OPEN) {
+        client.send(JSON.stringify(acftCache));
+      }
     }
   }
-});
-// Check if websocket was closed
-socket.addEventListener('close', event => {
-  console.log('WebSocket connection closed:', event.code, event.reason);
-});
-// check for error while usin websocket
-socket.addEventListener('error', error => {
-  console.error('WebSocket error:', error);
-});
 
 
 
-//setup the output websocket
-app.ws('/api/acft-data', (ws, req) => {
-  clients.add(ws);
-  console.log('Client connected');
-
-  if (acftCache) {
-    ws.send(JSON.stringify(acftCache));
-  }
-
-  ws.on('close', () => {
-    clients.delete(ws);
-    console.log('Client disconnected');
-  });
-});
 
 let healthStatus;
 
@@ -128,37 +137,7 @@ app.get("/api/atis", (req, res) => {
   let req_airport = req.query.airport
   //find the requested value
   let final_return = atisCache.find(item => item.airport === req_airport);
-  db.run(
-  "UPDATE airports SET count = count + 1 WHERE id = ?",
-  [23],
-  function(err) {
-    if (err) {
-      console.error(err);
-    } else {
-      console.log(`Row updated successfully`);
-    }
-  }
-);
   //console.log(final_return);
-    db.all("SELECT * FROM airports WHERE name = ?", [req.query.airport], (err, rows) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ error: "Database error" });
-    } else {
-        if (rows == []) {
-          
-        } else {
-          db.run(
-            "UPDATE airports SET count = count + 1 WHERE name = ?",[req.query.airport],
-            function(err) {
-              if (err) {
-                console.error(err);
-              } else {
-                console.log(`Row updated successfully`);
-              }
-            });
-        }
-    }})
   //send it back
   res.json(final_return || []);
 });
@@ -169,4 +148,4 @@ app.get("/api/teapot", (req, res) => {
 });
 
 
-app.listen(8443, () => console.log("Server running on port 8443"));
+server.listen(8443, () => console.log("Server running on port 8443"));
