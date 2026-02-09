@@ -1,5 +1,6 @@
 const express = require("express");
-const fetch = require("node-fetch");
+const fetch = require('node-fetch');
+globalThis.fetch = fetch;
 const cors = require("cors");
 const ws = require('ws');
 const { createServer } = require('http')
