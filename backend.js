@@ -24,10 +24,10 @@ wss.on('connection', (ws) => {
   clients.add(ws); console.log('New client connected');
   // Send the initial data to the client
   if(acftCache) {
-    WebSocket.send(JSON.stringify(acftCache));
+    ws.send(JSON.stringify(acftCache));
   }
   // Close event handler
-  WebSocket.on('close', () => {
+  ws.on('close', () => {
     console.log('Client disconnected');
     clients.delete(ws);
   });
