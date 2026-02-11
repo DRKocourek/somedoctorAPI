@@ -133,6 +133,12 @@ app.get("/api/datahealth", (req, res) => {
   res.json(healthStatus || []);
 });
 
+app.get("/api/clientcount", (req, res) => {
+  console.log(clients.size);
+  res.json(clients.size || 0);
+});
+
+
 app.get("/api/atis", (req, res) => {
   //get the airport parameter value
   let req_airport = req.query.airport
