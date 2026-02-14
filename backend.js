@@ -21,7 +21,8 @@ const wss = new WebSocketServer({
 
 //setup the output WebSocket
 wss.on('connection', (ws) => {
-  clients.add(ws); console.log('New client connected');
+  clients.add(ws); 
+  console.log('New client connected');
   // Send the initial data to the client
   if(acftCache) {
     ws.send(JSON.stringify(acftCache));
@@ -67,15 +68,19 @@ let socket = connectUpstream();
     } catch {
       return;
     }
-    if (msg.t !== 'ACFT_DATA') return;
-
-    acftCache = msg;
-
-    for (const client of clients) {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify(acftCache));
+    if (msg.t === 'ACFT_DATA') {
+      acftCache = msg;
+      for (const client of clients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(acftCache));
+        }
       }
+    } else if (msg.t === 'ATIS') {
+      pullATIS();
+    } else if (msg.t === 'FLIGHT_PLAN') {
+      handleFlightPlan(msg.d);
     }
+
   }
 
 
@@ -86,10 +91,13 @@ let healthStatus;
 let flightplans = [];
 
 async function handleFlightPlan(data){
-  let index = flightplans.length;
-  flightplans[index] = data;
-  //console.log(flightplans[index].d.arriving);
+    flightplans.push(data);
 
+  for (let i = flightplans.length - 1; i >= 0; i--) {
+    if (!acftCache.d.hasOwnProperty(flightplans[i].realcallsign)) {
+      flightplans.splice(i, 1);
+    }
+  }
 }
 
 let controllersCache = null;
@@ -134,7 +142,6 @@ app.get("/api/datahealth", (req, res) => {
 });
 
 app.get("/api/clientcount", (req, res) => {
-  console.log(clients.size);
   res.json(clients.size || 0);
 });
 
