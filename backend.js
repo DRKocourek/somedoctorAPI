@@ -5,78 +5,77 @@ import WebSocket, { WebSocketServer } from 'ws';
 import http from 'http';
 import url from 'url';
 
-let acftCache;
-let atisCache;
-//keep track of connected users
-const clients = new Set();
-const flpClients = new Set();
+let acftCache = null;
+let atisCache = null;
+let healthStatus = false;
 
+const clients = new Set();      //acft data clients
+const flpClients = new Set();   //flight plan clients
 
 const app = express();
+app.use(cors());
 
 const server = http.createServer(app);
 
-const wss = new WebSocketServer({
-  server,
-  path: '/api/acft-data',
+const wss = new WebSocketServer({ noServer: true });
+
+//needed for routing
+server.on('upgrade', (request, socket, head) => {
+  const pathname = url.parse(request.url).pathname;
+
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    ws.path = pathname; // store path for routing
+    wss.emit('connection', ws, request);
+  });
 });
-const wsp = new WebSocketServer({
-  server,
-  path: '/api/flight-plans',
+  //setup the output WebSocket
+wss.on('connection', (ws) => {
+  if (ws.path === '/api/acft-data') {
+    clients.add(ws);
+    console.log('ACFT client connected');
+    //send initial data if available
+    if (acftCache) { 
+      ws.send(JSON.stringify(acftCache));
+    } else {
+      ws.send(JSON.stringify(""));
+    }
+    //close event handler
+    ws.on('close', () => {
+      clients.delete(ws);
+      console.log('ACFT client disconnected');
+    });
+
+  } else if (ws.path === '/api/flight-plans') {
+    flpClients.add(ws);
+    console.log('Flight Plan client connected');
+
+    if (flightplans.length) ws.send(JSON.stringify(flightplans));
+    else ws.send(JSON.stringify(""));
+
+    ws.on('close', () => {
+      flpClients.delete(ws);
+      console.log('Flight Plan client disconnected');
+    });
+  } else {
+    ws.close(); // unsupported path
+  }
 });
 
-//setup the output acft data WebSocket
-wss.on('connection', (ws) => {
-  clients.add(ws); 
-  console.log('New client connected');
-  // Send the initial data to the client
-  if(acftCache) {
-    ws.send(JSON.stringify(acftCache));
-  } else {
-    ws.send(JSON.stringify(""));
-  }
-  // Close event handler
-  ws.on('close', () => {
-    console.log('Client disconnected');
-    clients.delete(ws);
-  });
-});
-//the flightplan websocket
-wsp.on('connection', (ws) => {
-  flpClients.add(ws); 
-  console.log('New client connected');
-  // Send the initial data to the client
-  if(flightplans) {
-    ws.send(JSON.stringify(flightplans));
-  } else {
-    ws.send(JSON.stringify(""));
-  }
-  // Close event handler
-  ws.on('close', () => {
-    console.log('Client disconnected');
-    flpClients.delete(ws);
-  });
-});
-//handle pings on flightplans websocket only cuz of data frequency being so low
+//ping flightplan clients because of the high intervals between messages
 setInterval(() => {
   for (const ws of flpClients) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.ping();
-    }
+    if (ws.readyState === WebSocket.OPEN) ws.ping();
   }
 }, 30000);
 
+// Allow requests 
+app.use(cors()); 
 
-// Allow requests
-app.use(cors());
-//setup WebSocket
+//setup inbound WebSocket
 function connectUpstream() {
-  const socket = new WebSocket('wss://24data.ptfs.app/wss');
+  const socket = new WebSocket('wss://24data.ptfs.app/wss', { perMessageDeflate: false });
 
-  socket.on('open', () => {
-    console.log('Upstream WS connected');
-  });
-
+  socket.on('open', () => console.log('Upstream WS connected'));
   socket.on('message', handleMessage);
 
   socket.on('close', () => {
@@ -84,7 +83,7 @@ function connectUpstream() {
     setTimeout(connectUpstream, 5000);
   });
 
-  socket.on('error', err => {
+  socket.on('error', (err) => {
     console.error('Upstream WS error', err);
     socket.close();
   });
@@ -93,48 +92,41 @@ function connectUpstream() {
 }
 
 let socket = connectUpstream();
-//listen and filter just the needed data
-  function handleMessage(raw) {
-    let msg;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (msg.t === 'ACFT_DATA') {
+//listen and filter out just the needed data
+function handleMessage(raw) {
+  let msg;
+  try {
+    msg = JSON.parse(raw);
+  } catch {
+    return;
+  }
+
+    if(msg.t ==='ACFT_DATA'){
       acftCache = msg;
       for (const client of clients) {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify(acftCache));
-        }
+        if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(acftCache));
       }
-    } else if (msg.t === 'ATIS') {
+    } else if (msg.t ==='ATIS') {
       pullATIS();
     } else if (msg.t === 'FLIGHT_PLAN') {
       handleFlightPlan(msg.d);
     }
-  }
-
-
-
-
-let healthStatus;
+}
 
 let flightplans = [];
 
-async function handleFlightPlan(data){
-    flightplans.push(data);
+async function handleFlightPlan(data) {
+  flightplans.push(data);
 
   for (let i = flightplans.length - 1; i >= 0; i--) {
-    if (!acftCache.d.hasOwnProperty(flightplans[i].realcallsign)) {
+    if (!acftCache?.d?.hasOwnProperty(flightplans[i].realcallsign)) {
       flightplans.splice(i, 1);
     }
   }
-  //send of the updated flightplans
-  for (const client of flpClients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(flightplans));        
-    }
+
+  //send updated flight plans
+  for (const ws of flpClients) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(flightplans));
   }
 }
 
@@ -145,25 +137,22 @@ async function pullControllers() {
     const res = await fetch("https://24data.ptfs.app/controllers");
     controllersCache = await res.json();
     healthStatus = true;
-    //console.log("Updated controllers cache");
   } catch (err) {
-    healthStatus = false
-    console.error("An error occured when trying to receive data: ", err);
+    healthStatus = false;
+    console.error("Error fetching controllers:", err);
   }
 }
 
-
 async function pullATIS() {
-  try{
+  try {
     const res = await fetch("https://24data.ptfs.app/atis");
     atisCache = await res.json();
     healthStatus = true;
-  } catch(err){
+  } catch (err) {
     healthStatus = false;
-    console.error("An error occured when trying to receive data: ", err);
+    console.error("Error fetching ATIS:", err);
   }
 }
-
 
 setInterval(pullControllers, 6000);
 pullControllers();
@@ -183,21 +172,17 @@ app.get("/api/clientcount", (req, res) => {
   res.json(clients.size || 0);
 });
 
-
 app.get("/api/atis", (req, res) => {
   //get the airport parameter value
-  let req_airport = req.query.airport
+  const req_airport = req.query.airport;
   //find the requested value
-  let final_return = atisCache.find(item => item.airport === req_airport);
-  //console.log(final_return);
+  const result = atisCache?.find(item => item.airport === req_airport);
   //send it back
-  res.json(final_return || []);
+  res.json(result || []);
 });
 
 app.get("/api/teapot", (req, res) => {
-  res.status(418);
-  res.send("<html><body><h1>I'm a teapot</h1></body><html>");
+  res.status(418).send("<html><body><h1>I'm a teapot</h1></body></html>");
 });
-
 
 server.listen(8443, () => console.log("Server running on port 8443"));
