@@ -9,6 +9,8 @@ let acftCache;
 let atisCache;
 //keep track of connected users
 const clients = new Set();
+const flpClients = new Set();
+
 
 const app = express();
 
@@ -18,14 +20,20 @@ const wss = new WebSocketServer({
   server,
   path: '/api/acft-data',
 });
+const wsp = new WebSocketServer({
+  server,
+  path: '/api/flight-plans',
+});
 
-//setup the output WebSocket
+//setup the output acft data WebSocket
 wss.on('connection', (ws) => {
   clients.add(ws); 
   console.log('New client connected');
   // Send the initial data to the client
   if(acftCache) {
     ws.send(JSON.stringify(acftCache));
+  } else {
+    ws.send(JSON.stringify(""));
   }
   // Close event handler
   ws.on('close', () => {
@@ -33,6 +41,31 @@ wss.on('connection', (ws) => {
     clients.delete(ws);
   });
 });
+//the flightplan websocket
+wsp.on('connection', (ws) => {
+  flpClients.add(ws); 
+  console.log('New client connected');
+  // Send the initial data to the client
+  if(flightplans) {
+    ws.send(JSON.stringify(flightplans));
+  } else {
+    ws.send(JSON.stringify(""));
+  }
+  // Close event handler
+  ws.on('close', () => {
+    console.log('Client disconnected');
+    flpClients.delete(ws);
+  });
+});
+//handle pings on flightplans websocket only cuz of data frequency being so low
+setInterval(() => {
+  for (const ws of flpClients) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping();
+    }
+  }
+}, 30000);
+
 
 // Allow requests
 app.use(cors());
@@ -80,7 +113,6 @@ let socket = connectUpstream();
     } else if (msg.t === 'FLIGHT_PLAN') {
       handleFlightPlan(msg.d);
     }
-
   }
 
 
@@ -96,6 +128,12 @@ async function handleFlightPlan(data){
   for (let i = flightplans.length - 1; i >= 0; i--) {
     if (!acftCache.d.hasOwnProperty(flightplans[i].realcallsign)) {
       flightplans.splice(i, 1);
+    }
+  }
+  //send of the updated flightplans
+  for (const client of flpClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(flightplans));        
     }
   }
 }
