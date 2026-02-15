@@ -114,19 +114,43 @@ function handleMessage(raw) {
 }
 
 let flightplans = [];
+let flightplan_timestamps = [];
 
 async function handleFlightPlan(data) {
   flightplans.push(data);
+  flightplan_timestamps.push(Date.now());
 
-  for (let i = flightplans.length - 1; i >= 0; i--) {
-    if (!acftCache?.d?.hasOwnProperty(flightplans[i].realcallsign)) {
+  for (let i = 0; i <= flightplans.length; i++) {
+    if (Math.floor((Date.now() - flightplan_timestamps[i]) / 60000) > 100){ //keep flightplans for at most 100 minutes
+      console.log(flightplans[i]);
+
+      console.log(Math.floor((Date.now() - flightplan_timestamps[i]) / 60000));
+      console.log(Date.now());
+      console.log(flightplan_timestamps[i]);
       flightplans.splice(i, 1);
+      flightplan_timestamps.splice(i, 1);
+      i--;
+    }
+  }
+  for (let i = 0; i < flightplans.length; i++) {
+    const name = flightplans[i].robloxName;
+
+    // Check if this name appears later in the array
+    const duplicateIndex = flightplans.findIndex((fp, idx) => fp.robloxName === name && idx > i);
+
+    if (duplicateIndex !== -1) {
+      // Remove the current (lower index) one
+      flightplans.splice(i, 1);
+      flightplan_timestamps.splice(i, 1);
+      i--; // stay on the same index since we removed an element
     }
   }
 
   //send updated flight plans
   for (const ws of flpClients) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(flightplans));
+    if (ws.readyState === WebSocket.OPEN){ 
+      ws.send(JSON.stringify(flightplans));
+    } 
   }
 }
 
