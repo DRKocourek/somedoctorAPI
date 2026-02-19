@@ -128,14 +128,16 @@ async function sendATIS() {
 let flightplans = [];
 let flightplan_timestamps = [];
 
-async function syncflp() {
+async function syncflp(){
   const res = await fetch("https://loadbalancer.drkocourek.workers.dev");
-  const url = await res.json;
-  const json = await fetch(url + "/api/flpsync").json;
-  flightplans = json.flp;
-  flightplan_timestamps = json.times;
+  const rcv_url = await res.json();
+  const json_fetch = await fetch(rcv_url + "/api/flpsync");
+  const final_json = await json_fetch.json();
+  flightplans = final_json.flp;
+  flightplan_timestamps = final_json.times;
 }
 syncflp();
+
 
 async function handleFlightPlan(data) {
   flightplans.push(data);
