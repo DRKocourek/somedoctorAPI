@@ -119,7 +119,10 @@ function handleMessage(raw) {
 async function sendATIS() {
   for (const ws of generalClients) {
     if (ws.readyState === WebSocket.OPEN){ 
-      ws.send(JSON.stringify(atisCache));
+      ws.send(JSON.stringify({
+        type: "ATIS",
+        data: atisCache,
+      }));
     } 
   }
 }
@@ -172,7 +175,10 @@ async function handleFlightPlan(data) {
   //send updated flight plans
   for (const ws of generalClients) {
     if (ws.readyState === WebSocket.OPEN){ 
-      ws.send(JSON.stringify(flightplans));
+      ws.send(JSON.stringify({
+        type: "FLIGHT_PLAN",
+        data: flightplans
+      }));
     } 
   }
 }
