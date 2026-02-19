@@ -10,7 +10,9 @@ let atisCache = null;
 let healthStatus = false;
 
 const clients = new Set();      //acft data clients
-const flpClients = new Set();   //flight plan clients
+const generalClients = new Set();   //flight plan clients
+
+
 
 const app = express();
 app.use(cors());
@@ -45,16 +47,16 @@ wss.on('connection', (ws) => {
       console.log('ACFT client disconnected');
     });
 
-  } else if (ws.path === '/api/flight-plans') {
-    flpClients.add(ws);
-    console.log('Flight Plan client connected');
+  } else if (ws.path === '/api/general') {
+    generalClients.add(ws);
+    console.log('General WS client connected');
 
     if (flightplans.length) ws.send(JSON.stringify(flightplans));
     else ws.send(JSON.stringify(""));
 
     ws.on('close', () => {
-      flpClients.delete(ws);
-      console.log('Flight Plan client disconnected');
+      generalClients.delete(ws);
+      console.log('General WS client disconnected');
     });
   } else {
     ws.close(); // unsupported path
@@ -63,7 +65,7 @@ wss.on('connection', (ws) => {
 
 //ping flightplan clients because of the high intervals between messages
 setInterval(() => {
-  for (const ws of flpClients) {
+  for (const ws of generalClients) {
     if (ws.readyState === WebSocket.OPEN) ws.ping();
   }
 }, 30000);
@@ -108,13 +110,32 @@ function handleMessage(raw) {
       }
     } else if (msg.t ==='ATIS') {
       pullATIS();
+      sendATIS();
     } else if (msg.t === 'FLIGHT_PLAN') {
       handleFlightPlan(msg.d);
     }
 }
 
+async function sendATIS() {
+  for (const ws of generalClients) {
+    if (ws.readyState === WebSocket.OPEN){ 
+      ws.send(JSON.stringify(atisCache));
+    } 
+  }
+}
+
+
 let flightplans = [];
 let flightplan_timestamps = [];
+
+async function syncflp() {
+  const res = await fetch("https://loadbalancer.drkocourek.workers.dev");
+  const url = await res.json;
+  const json = await fetch(url + "/api/flpsync").json;
+  flightplans = json.flp;
+  flightplan_timestamps = json.times;
+}
+syncflp();
 
 async function handleFlightPlan(data) {
   flightplans.push(data);
@@ -147,7 +168,7 @@ async function handleFlightPlan(data) {
   }
 
   //send updated flight plans
-  for (const ws of flpClients) {
+  for (const ws of generalClients) {
     if (ws.readyState === WebSocket.OPEN){ 
       ws.send(JSON.stringify(flightplans));
     } 
@@ -183,6 +204,14 @@ pullControllers();
 
 setInterval(pullATIS, 30000);
 pullATIS();
+
+app.get("/api/flpsync", (req, res) => {
+  res.json({
+    flp: flightplans,
+    times: flightplan_timestamps
+  } || []);
+});
+
 
 app.get("/api/controllers", (req, res) => {
   res.json(controllersCache || []);
