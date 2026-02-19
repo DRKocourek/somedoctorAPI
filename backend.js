@@ -51,9 +51,10 @@ wss.on('connection', (ws) => {
     generalClients.add(ws);
     console.log('General WS client connected');
 
-    if (flightplans.length) ws.send(JSON.stringify(flightplans));
+    if (flightplans.length) ws.send(JSON.stringify({type: "FLIGHT_PLAN", data: flightplans}));
     else ws.send(JSON.stringify(""));
-
+    if(atisCache) ws.send(JSON.stringify({type: "ATIS", data: atisCache}));
+    else ws.send(JSON.stringify(""));
     ws.on('close', () => {
       generalClients.delete(ws);
       console.log('General WS client disconnected');
