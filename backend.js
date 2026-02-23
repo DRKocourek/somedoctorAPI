@@ -11,40 +11,9 @@ const require = createRequire(import.meta.url);
 
 require('dotenv').config();
 
-const initSqlJs = require("sql.js");
-const fs = require("fs");
-const path = require("path");
-
-const DB_PATH = "/home/drkocourek/24api/stats/stats.sqlite";
-
-let db;
-
-async function openDb() {
-  const SQL = await initSqlJs();
-
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  return db;
-}
-
-function saveDb() {
-  if (!db) return;
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(DB_PATH, buffer);
-}
-
-export default {
-  openDb,
-  saveDb,
-  getDb: () => db
-};
-
+import { openDb, saveDb, getDb } from "./db.js";
+await openDb();
+const db = getDb();
 //const axios = require('axios');
 
 //const db = require('./db');
@@ -260,14 +229,20 @@ pullATIS();
 
 
 setInterval(async () => {
-  db.run("INSERT INTO WS VALUES(" + Date.now() + "," + clients.size + ");",             
-  function(err) {
-    if (err) {
-      console.error(err);
-    } else {
-    }
-  });
+  writeToDB();
 }, 60000);
+
+writeToDB();
+
+function writeToDB() {
+  try {
+    const stmt = db.prepare("INSERT INTO WS VALUES (?, ?)");
+    stmt.run([Date.now(), clients.size]);
+    stmt.free();
+  } catch (err) {
+    console.error(err);
+  }
+}
 
 app.get("/api/flpsync", (req, res) => {
   res.json({
