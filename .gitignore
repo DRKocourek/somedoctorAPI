@@ -4,3 +4,4 @@ stats
 stats/stats.sqlite
 package.json
 .git
+.env

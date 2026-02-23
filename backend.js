@@ -5,6 +5,19 @@ import WebSocket, { WebSocketServer } from 'ws';
 import http from 'http';
 import url from 'url';
 
+
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+
+require('dotenv').config();
+
+const sqlite3 = require('sqlite3').verbose();
+const db = new sqlite3.Database("/home/drkocourek/24api/stats/stats.sqlite");
+
+//const axios = require('axios');
+
+//const db = require('./db');
+
 let acftCache = null;
 let atisCache = null;
 let healthStatus = false;
@@ -133,12 +146,16 @@ let flightplans = [];
 let flightplan_timestamps = [];
 
 async function syncflp(){
+  try {
   const res = await fetch("https://loadbalancer.drkocourek.workers.dev");
   const rcv_url = await res.json();
   const json_fetch = await fetch(rcv_url + "/api/flpsync");
   const final_json = await json_fetch.json();
   flightplans = final_json.flp;
   flightplan_timestamps = final_json.times;
+  } catch(e) {
+    console.error(e);
+  }
 }
 syncflp();
 
@@ -149,11 +166,7 @@ async function handleFlightPlan(data) {
 
   for (let i = 0; i <= flightplans.length; i++) {
     if (Math.floor((Date.now() - flightplan_timestamps[i]) / 60000) > 100){ //keep flightplans for at most 100 minutes
-      console.log(flightplans[i]);
 
-      console.log(Math.floor((Date.now() - flightplan_timestamps[i]) / 60000));
-      console.log(Date.now());
-      console.log(flightplan_timestamps[i]);
       flightplans.splice(i, 1);
       flightplan_timestamps.splice(i, 1);
       i--;
@@ -214,6 +227,17 @@ pullControllers();
 setInterval(pullATIS, 30000);
 pullATIS();
 
+
+setInterval(async () => {
+  db.run("INSERT INTO WS VALUES(" + Date.now() + "," + clients.size + ");",             
+  function(err) {
+    if (err) {
+      console.error(err);
+    } else {
+    }
+  });
+}, 60000);
+
 app.get("/api/flpsync", (req, res) => {
   res.json({
     flp: flightplans,
@@ -246,5 +270,79 @@ app.get("/api/atis", (req, res) => {
 app.get("/api/teapot", (req, res) => {
   res.status(418).send("<html><body><h1>I'm a teapot</h1></body></html>");
 });
+
+/*
+
+//TBD later
+//discord login routes
+
+//this path shouldnt be used to save bandwidth and requests on the loadbalancer
+app.get("/api/auth/discord/login", (req, res) => {
+  const url = "https://discord.com/oauth2/authorize?client_id=1475127263451152414&response_type=code&redirect_uri=https%3A%2F%2Fauth.drkocourek.stream%2F&scope=identify"
+  res.redirect(url);
+});
+
+
+var options = {
+  host: 'www.host.com',
+  path: '/',
+  port: '443',
+  method: 'POST'
+};
+
+let callback = function(response) {
+  var str = ''
+  response.on('data', function (chunk) {
+    str += chunk;
+  });
+
+  response.on('end', function () {
+    console.log(str);
+  });
+}
+
+app.get("/api/auth/discord/callback", async (req, res) => {
+  if (!req.query.code) {
+    res.status(400).send("<html><body><h1>Error 400. No oauth2 code provided</h1></body></html>")
+  }
+
+  const { code } = req.query
+  //get the discord access token
+  const params = new URLSearchParams();
+  params.append("client_id", process.env.DISCORD_CLIENT_ID);
+  params.append("client_secret", process.env.DISCORD_CLIENT_SECRET);
+  params.append("grant_type", "authorization_code");
+  params.append("code", code);
+  params.append("redirect_uri", process.env.DISCORD_REDIRECT_URI);
+  //get the user data
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  }
+
+  const response = await axios.post('https://discord.com/api/oauth2/token', params.toString(),
+    {    
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    }
+    });
+  const getUserResponse = await axios.get('https://discord.com/api/users/@me', {
+    headers: {
+      Authorization: `Bearer ${response.data.access_token}`,
+      ...headers
+    }
+  });
+
+  const {id, username, avatar} = getUserResponse.data;
+
+  const UserExists = await db('users').where({discordId: id}).first();
+  if (UserExists) {
+    await db('users').where({discordId: id}).update({username, avatar});
+  } else {
+    await db('users').where({discordId: id, username, avatar});
+  }
+
+  res.json(getUserResponse.data);
+  });*/
+
 
 server.listen(8443, () => console.log("Server running on port 8443"));
