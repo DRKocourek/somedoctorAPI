@@ -11,8 +11,39 @@ const require = createRequire(import.meta.url);
 
 require('dotenv').config();
 
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database("/home/drkocourek/24api/stats/stats.sqlite");
+const initSqlJs = require("sql.js");
+const fs = require("fs");
+const path = require("path");
+
+const DB_PATH = "/home/drkocourek/24api/stats/stats.sqlite";
+
+let db;
+
+async function openDb() {
+  const SQL = await initSqlJs();
+
+  if (fs.existsSync(DB_PATH)) {
+    const fileBuffer = fs.readFileSync(DB_PATH);
+    db = new SQL.Database(fileBuffer);
+  } else {
+    db = new SQL.Database();
+  }
+
+  return db;
+}
+
+function saveDb() {
+  if (!db) return;
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  fs.writeFileSync(DB_PATH, buffer);
+}
+
+export default {
+  openDb,
+  saveDb,
+  getDb: () => db
+};
 
 //const axios = require('axios');
 
