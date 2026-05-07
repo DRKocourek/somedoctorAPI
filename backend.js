@@ -11,13 +11,6 @@ const require = createRequire(import.meta.url);
 
 require('dotenv').config();
 
-import { openDb, saveDb, getDb } from "./db.js";
-await openDb();
-const db = getDb();
-//const axios = require('axios');
-
-//const db = require('./db');
-
 let acftCache = null;
 let atisCache = null;
 let healthStatus = false;
@@ -227,23 +220,6 @@ pullControllers();
 setInterval(pullATIS, 30000);
 pullATIS();
 
-
-setInterval(async () => {
-  writeToDB();
-}, 60000);
-
-writeToDB();
-
-function writeToDB() {
-  try {
-    const stmt = db.prepare("INSERT INTO WS VALUES (?, ?)");
-    stmt.run([Date.now(), clients.size]);
-    stmt.free();
-  } catch (err) {
-    console.error(err);
-  }
-}
-
 app.get("/api/flpsync", (req, res) => {
   res.json({
     flp: flightplans,
@@ -276,79 +252,6 @@ app.get("/api/atis", (req, res) => {
 app.get("/api/teapot", (req, res) => {
   res.status(418).send("<html><body><h1>I'm a teapot</h1></body></html>");
 });
-
-/*
-
-//TBD later
-//discord login routes
-
-//this path shouldnt be used to save bandwidth and requests on the loadbalancer
-app.get("/api/auth/discord/login", (req, res) => {
-  const url = "https://discord.com/oauth2/authorize?client_id=1475127263451152414&response_type=code&redirect_uri=https%3A%2F%2Fauth.drkocourek.stream%2F&scope=identify"
-  res.redirect(url);
-});
-
-
-var options = {
-  host: 'www.host.com',
-  path: '/',
-  port: '443',
-  method: 'POST'
-};
-
-let callback = function(response) {
-  var str = ''
-  response.on('data', function (chunk) {
-    str += chunk;
-  });
-
-  response.on('end', function () {
-    console.log(str);
-  });
-}
-
-app.get("/api/auth/discord/callback", async (req, res) => {
-  if (!req.query.code) {
-    res.status(400).send("<html><body><h1>Error 400. No oauth2 code provided</h1></body></html>")
-  }
-
-  const { code } = req.query
-  //get the discord access token
-  const params = new URLSearchParams();
-  params.append("client_id", process.env.DISCORD_CLIENT_ID);
-  params.append("client_secret", process.env.DISCORD_CLIENT_SECRET);
-  params.append("grant_type", "authorization_code");
-  params.append("code", code);
-  params.append("redirect_uri", process.env.DISCORD_REDIRECT_URI);
-  //get the user data
-  const headers = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-  }
-
-  const response = await axios.post('https://discord.com/api/oauth2/token', params.toString(),
-    {    
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    }
-    });
-  const getUserResponse = await axios.get('https://discord.com/api/users/@me', {
-    headers: {
-      Authorization: `Bearer ${response.data.access_token}`,
-      ...headers
-    }
-  });
-
-  const {id, username, avatar} = getUserResponse.data;
-
-  const UserExists = await db('users').where({discordId: id}).first();
-  if (UserExists) {
-    await db('users').where({discordId: id}).update({username, avatar});
-  } else {
-    await db('users').where({discordId: id, username, avatar});
-  }
-
-  res.json(getUserResponse.data);
-  });*/
 
 
 server.listen(8443, () => console.log("Server running on port 8443"));
