@@ -5,3 +5,4 @@ stats/stats.sqlite
 package.json
 .git
 .env
+flp.json

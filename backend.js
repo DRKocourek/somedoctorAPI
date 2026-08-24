@@ -4,7 +4,7 @@ import cors from 'cors';
 import WebSocket, { WebSocketServer } from 'ws';
 import http from 'http';
 import url from 'url';
-
+import fs from 'fs';
 
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
@@ -82,14 +82,14 @@ app.use(cors());
 
 //setup inbound WebSocket
 function connectUpstream() {
-  const socket = new WebSocket('wss://24data.ptfs.app/wss', { perMessageDeflate: false });
+  let socket = new WebSocket('wss://24data.ptfs.app/wss', { perMessageDeflate: false });
 
   socket.on('open', () => console.log('Upstream WS connected'));
   socket.on('message', handleMessage);
 
   socket.on('close', () => {
     console.warn('Upstream WS closed, reconnecting in 5s');
-    setTimeout(connectUpstream, 5000);
+    setTimeout(() => {socket = connectUpstream()}, 5000);
   });
 
   socket.on('error', (err) => {
@@ -100,10 +100,31 @@ function connectUpstream() {
   return socket;
 }
 
+
+let lastUpstreamMessage = Date.now();
 let socket = connectUpstream();
+
+setInterval(() => {
+  const age = Date.now() - lastUpstreamMessage;
+
+  if (age > 60000) { // 1 minute
+    console.warn('Upstream stale, reconnecting');
+
+    socket.terminate();
+  }
+}, 10000);
+
+
+setInterval(() => {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.ping();
+  }
+}, 30000);
+
 //listen and filter out just the needed data
 function handleMessage(raw) {
   let msg;
+  lastUpstreamMessage = Date.now();
   try {
     msg = JSON.parse(raw);
   } catch {
@@ -120,6 +141,15 @@ function handleMessage(raw) {
       sendATIS();
     } else if (msg.t === 'FLIGHT_PLAN') {
       handleFlightPlan(msg.d);
+    } else if (msg.t === 'CONTROLLERS') {
+      for (const ws of generalClients) {
+        if (ws.readyState === WebSocket.OPEN){ 
+          ws.send(JSON.stringify({  
+            type: "CONTROLLERS",
+            data: msg.d,
+          }));
+        } 
+      }
     }
 }
 
@@ -163,6 +193,7 @@ async function handleFlightPlan(data) {
       flightplans.splice(i, 1);
       flightplan_timestamps.splice(i, 1);
       i--;
+
     }
   }
   for (let i = 0; i < flightplans.length; i++) {
@@ -175,7 +206,7 @@ async function handleFlightPlan(data) {
       // Remove the current (lower index) one
       flightplans.splice(i, 1);
       flightplan_timestamps.splice(i, 1);
-      i--; // stay on the same index since we removed an element
+      i--;
     }
   }
 
