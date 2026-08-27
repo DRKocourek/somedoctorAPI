@@ -82,22 +82,25 @@ app.use(cors());
 
 //setup inbound WebSocket
 function connectUpstream() {
-  let socket = new WebSocket('wss://24data.ptfs.app/wss', { perMessageDeflate: false });
+  let newSocket = new WebSocket('wss://24data.ptfs.app/wss', { perMessageDeflate: false });
 
-  socket.on('open', () => console.log('Upstream WS connected'));
-  socket.on('message', handleMessage);
+  newSocket.on('open', () => {
+    console.log('Upstream WS connected');
+    lastUpstreamMessage = Date.now(); // Reset timestamp on successful connection
+  });
+  newSocket.on('message', handleMessage);
 
-  socket.on('close', () => {
+  newSocket.on('close', () => {
     console.warn('Upstream WS closed, reconnecting in 5s');
     setTimeout(() => {socket = connectUpstream()}, 5000);
   });
 
-  socket.on('error', (err) => {
+  newSocket.on('error', (err) => {
     console.error('Upstream WS error', err);
-    socket.close();
+    newSocket.close();
   });
 
-  return socket;
+  return newSocket;
 }
 
 
@@ -109,8 +112,9 @@ setInterval(() => {
 
   if (age > 60000) { // 1 minute
     console.warn('Upstream stale, reconnecting');
-
-    socket.terminate();
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.close(); // Properly close to trigger the close event handler
+    }
   }
 }, 10000);
 
